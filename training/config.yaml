@@ -1,0 +1,27 @@
+model: "mlx-community/Qwen2.5-7B-Instruct-4bit"
+train: true
+fine_tune_type: lora
+data: "datasets"
+seed: 42
+num_layers: 4
+batch_size: 1
+iters: 20
+val_batches: 1
+learning_rate: 0.00001
+steps_per_report: 1
+steps_per_eval: 5
+grad_accumulation_steps: 2
+adapter_path: "training/exports/lifecycle-mentor-adapter"
+save_every: 10
+max_seq_length: 1024
+grad_checkpoint: true
+lora_parameters:
+  keys: ["self_attn.q_proj", "self_attn.v_proj"]
+  rank: 8
+  scale: 16.0
+  dropout: 0.05
+
+# Metadata used by the local training/publishing helpers, not MLX-LM.
+hf_model_repo: "tadrianonet/lifecycle-mentor"
+hf_model_private: false
+base_model_full_precision: "Qwen/Qwen2.5-7B-Instruct"

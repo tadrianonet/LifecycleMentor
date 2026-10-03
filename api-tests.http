@@ -1,0 +1,105 @@
+@baseUrl = http://localhost:8000
+
+### 1) Health check
+GET {{baseUrl}}/api/health
+
+### 2) Listar projetos
+GET {{baseUrl}}/api/projects
+
+### 3) Criar projeto
+# @name createProject
+POST {{baseUrl}}/api/projects
+Content-Type: application/json
+
+{
+  "name": "PulsoNexo — Métricas de treino com integração Polar",
+  "description": "Sistema que integra dados do Polar para acompanhar treinos de jiu-jítsu, musculação e corrida. Apresenta frequência cardíaca, zonas de intensidade, duração e volume semanal em um dashboard, com resumos apoiados por IA. O projeto registra a investigação da necessidade antes da implementação e acompanha sua evolução pelo PDLC e SDLC.",
+  "audience": "Praticantes de atividades físicas que utilizam dispositivos Polar e desejam compreender suas métricas e acompanhar a evolução dos treinos.",
+  "problem": "Na minha rotina de treinos, surgiu a necessidade de reunir e interpretar os dados registrados pelo Polar Verity Sense. O projeto investiga como transformar frequência cardíaca, intensidade e volume de treino em informações claras para acompanhar minha evolução. A experiência pessoal representa o ponto de partida; a utilidade para outros atletas deve ser validada com usuários.",
+  "constraints": "Integração com Polar AccessLink e autorização do usuário. Disponibilidade de métricas conforme dispositivo e dados fornecidos pela API. O Verity Sense não deve ser tratado como fonte de passos ou análise de sono. Proteção dos tokens e isolamento dos dados por usuário. MVP focado em sincronização de treinos, dashboard e acompanhamento semanal. Insights de IA devem explicar os dados sem oferecer diagnósticos médicos.",
+  "learning_objective": "Aplicar PDLC e SDLC ao PulsoNexo: registrar o problema observado, as hipóteses e as evidências coletadas antes da construção; justificar o escopo do MVP; definir requisitos e arquitetura; testar a integração com o Polar; e avaliar se o dashboard ajuda os usuários a compreender suas métricas de treino."
+}
+
+### 4) Obter projeto por ID
+@projectId = {{createProject.response.body.$.id}}
+GET {{baseUrl}}/api/projects/{{createProject.response.body.$.id}}
+
+### 5) Criar artefato válido
+POST {{baseUrl}}/api/projects/{{projectId}}/artifacts
+Content-Type: application/json
+
+{
+  "name": "Hipótese inicial",
+  "kind": "Registro de hipóteses",
+  "content": "A hipótese principal é que a proposta de valor melhora a compreensão da jornada do usuário e reduz a fricção operacional em relação ao modelo atual de anotações e planilhas manuais."
+}
+
+### 6) Criar artefato inválido
+POST {{baseUrl}}/api/projects/{{projectId}}/artifacts
+Content-Type: application/json
+
+{
+  "name": "Artefato inválido",
+  "kind": "Definição do problema",
+  "content": "curto"
+}
+
+### 7) Exportar projeto em markdown
+GET {{baseUrl}}/api/projects/{{projectId}}/export?format=markdown
+
+### 8) Exportar projeto em json
+GET {{baseUrl}}/api/projects/{{projectId}}/export?format=json
+
+### 9) Chat em modo Aprender
+POST {{baseUrl}}/api/projects/{{projectId}}/chat
+Content-Type: application/json
+
+{
+  "message": "Explique a hipótese principal do produto e qual problema ele resolve.",
+  "mode": "Aprender"
+}
+
+### 10) Chat em modo Construir
+POST {{baseUrl}}/api/projects/{{projectId}}/chat
+Content-Type: application/json
+
+{
+  "message": "Qual é o próximo passo para transformar essa ideia em MVP?",
+  "mode": "Construir"
+}
+
+### 11) Chat em modo Revisar
+POST {{baseUrl}}/api/projects/{{projectId}}/chat
+Content-Type: application/json
+
+{
+  "message": "Revise a clareza da proposta e me diga o que ainda precisa melhorar.",
+  "mode": "Revisar"
+}
+
+### 12) Upload de documento para indexação local
+POST {{baseUrl}}/api/documents/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="file"; filename="manual.txt"
+Content-Type: text/plain
+
+Este é um documento de teste para validar o RAG local do Lifecycle Mentor.
+Ele deve ser indexado e recuperado em buscas por contexto e termos relevantes.
+------WebKitFormBoundary
+Content-Disposition: form-data; name="project_id"
+
+{{projectId}}
+------WebKitFormBoundary
+Content-Disposition: form-data; name="title"
+
+Manual de teste
+------WebKitFormBoundary
+Content-Disposition: form-data; name="doc_type"
+
+didatico
+------WebKitFormBoundary--
+
+### 13) Buscar documentos e contexto
+GET {{baseUrl}}/api/search?project_id={{projectId}}&query=proposta de valor

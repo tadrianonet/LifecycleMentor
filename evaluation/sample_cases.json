@@ -1,0 +1,16 @@
+[
+  {
+    "id": "case-001",
+    "name": "Problema real sem evidência",
+    "instruction": "Como decidir se vale construir um novo módulo para acompanhar progresso de atletas?",
+    "expected_focus": ["descoberta", "evidencia", "hipoteses"],
+    "notes": "Caso fictício usado em avaliação."
+  },
+  {
+    "id": "case-002",
+    "name": "Requisito não funcional",
+    "instruction": "Um requisito exige uso offline. Como isso altera a arquitetura?",
+    "expected_focus": ["requisito-nao-funcional", "persistencia", "sincronizacao"],
+    "notes": "Caso fictício usado em avaliação."
+  }
+]

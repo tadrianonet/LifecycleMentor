@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LifecycleMentorDatasetExample",
+  "type": "object",
+  "required": ["id", "scenario", "project", "instruction", "response", "metadata"],
+  "properties": {
+    "id": { "type": "string" },
+    "scenario": { "type": "string" },
+    "project": { "type": "string" },
+    "instruction": { "type": "string" },
+    "response": { "type": "string" },
+    "metadata": {
+      "type": "object",
+      "required": ["mode", "stage", "source", "license", "reviewed_by_human"],
+      "properties": {
+        "mode": { "type": "string" },
+        "stage": { "type": "string" },
+        "source": { "type": "string" },
+        "license": { "type": "string" },
+        "reviewed_by_human": { "type": "boolean" },
+        "fictitious": { "type": "boolean" }
+      }
+    }
+  }
+}
