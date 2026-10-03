@@ -5,7 +5,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from backend.app.config import ALLOWED_ORIGINS, APP_HOST, APP_PORT, OLLAMA_MODEL
+from backend.app.config import ALLOWED_ORIGINS, APP_HOST, APP_PORT, CHAT_PROVIDER, OLLAMA_MODEL
 from backend.app.database import init_db
 from backend.app.schemas import ArtifactCreate, ChatRequest, ProjectCreate
 from backend.app.services.ollama_service import generate_chat_response, model_status, stream_chat_response
@@ -32,7 +32,12 @@ def startup_event() -> None:
 
 @app.get("/api/health")
 def health_check() -> dict:
-    return {"status": "ok", "mode": "local", "ollama_model": OLLAMA_MODEL}
+    return {
+        "status": "ok",
+        "mode": "local",
+        "chat_provider": CHAT_PROVIDER,
+        "ollama_model": OLLAMA_MODEL,
+    }
 
 
 @app.get("/api/projects")

@@ -14,9 +14,9 @@ import './workspace.css'
 
 type ApiIssue = { loc?: Array<string | number>; msg?: string }
 type ApiErrorBody = { detail?: string | ApiIssue[] }
-type OllamaStatus = { available: boolean; model: string; base_url: string; reason?: string }
+type ProviderStatus = { available: boolean; provider: 'mlx' | 'ollama'; provider_label: string; model: string; base_model?: string; base_url: string; reason?: string }
 type ApiConnection = 'checking' | 'connected' | 'offline'
-type ConnectionSnapshot = { api: ApiConnection; apiError: string; ollama: OllamaStatus | null; ollamaError: string }
+type ConnectionSnapshot = { api: ApiConnection; apiError: string; provider: ProviderStatus | null; providerError: string }
 type ProjectForm = { name: string; description: string; audience: string; problem: string; constraints: string; learning_objective: string }
 type ArtifactForm = { name: string; kind: string; content: string }
 type UploadState = 'idle' | 'sending' | 'success' | 'warning' | 'error'
@@ -81,17 +81,17 @@ function relatedStage(kind: string) {
 }
 
 async function queryConnections(): Promise<ConnectionSnapshot> {
-  const [apiResult, ollamaResult] = await Promise.allSettled([
+  const [apiResult, providerResult] = await Promise.allSettled([
     apiRequest<{ status: string }>('/api/health'),
-    apiRequest<OllamaStatus>('/api/ollama/status'),
+    apiRequest<ProviderStatus>('/api/ollama/status'),
   ])
   const apiConnected = apiResult.status === 'fulfilled' && apiResult.value.status === 'ok'
-  const ollama = ollamaResult.status === 'fulfilled' ? ollamaResult.value : null
+  const provider = providerResult.status === 'fulfilled' ? providerResult.value : null
   return {
     api: apiConnected ? 'connected' : 'offline',
     apiError: apiConnected ? '' : apiResult.status === 'rejected' ? getErrorMessage(apiResult.reason) : 'A API respondeu com um estado inesperado.',
-    ollama,
-    ollamaError: ollamaResult.status === 'rejected' ? getErrorMessage(ollamaResult.reason) : ollama?.reason ?? '',
+    provider,
+    providerError: providerResult.status === 'rejected' ? getErrorMessage(providerResult.reason) : provider?.reason ?? '',
   }
 }
 
@@ -127,8 +127,8 @@ function App() {
   const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [uploadMessage, setUploadMessage] = useState('')
   const [retryFile, setRetryFile] = useState<File | null>(null)
-  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null)
-  const [ollamaError, setOllamaError] = useState('')
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
+  const [providerError, setProviderError] = useState('')
   const [apiConnection, setApiConnection] = useState<ApiConnection>('checking')
   const [apiConnectionError, setApiConnectionError] = useState('')
   const [isCheckingConnections, setIsCheckingConnections] = useState(true)
@@ -164,7 +164,7 @@ function App() {
     setIsCheckingConnections(true)
     const snapshot = await queryConnections()
     setApiConnection(snapshot.api); setApiConnectionError(snapshot.apiError)
-    setOllamaStatus(snapshot.ollama); setOllamaError(snapshot.ollamaError)
+    setProviderStatus(snapshot.provider); setProviderError(snapshot.providerError)
     setIsCheckingConnections(false)
   }
 
@@ -174,7 +174,7 @@ function App() {
       const snapshot = await queryConnections()
       if (!active) return
       setApiConnection(snapshot.api); setApiConnectionError(snapshot.apiError)
-      setOllamaStatus(snapshot.ollama); setOllamaError(snapshot.ollamaError)
+      setProviderStatus(snapshot.provider); setProviderError(snapshot.providerError)
       setIsCheckingConnections(false)
     }
     void check()
@@ -417,7 +417,7 @@ function App() {
       </nav>
       <div className="sidebar-bottom">
         <NavItem view="settings" activeView={activeView} onSelect={selectView} collapsed={sidebarCollapsed} icon={<Settings2 size={18} aria-hidden="true" />} />
-        <ConnectionPanel apiStatus={apiConnection} ollamaAvailable={ollamaStatus?.available ?? null} checking={isCheckingConnections} collapsed={sidebarCollapsed} onRefresh={() => void refreshConnections()} />
+        <ConnectionPanel apiStatus={apiConnection} provider={providerStatus} checking={isCheckingConnections} collapsed={sidebarCollapsed} onRefresh={() => void refreshConnections()} />
       </div>
     </aside>
   )
@@ -467,7 +467,7 @@ function App() {
     }} contextOpen={contextOpen} onToggleContext={() => setContextOpen((value) => !value)} onOpenStages={() => selectView('stages')} relatedArtifacts={artifacts.filter((artifact) => artifact.kind === selectedStage.artifactKind)} onReviewArtifact={reviewArtifact} />
     if (activeView === 'artifacts') return <ArtifactsView artifacts={filteredArtifacts} totalCount={artifacts.length} query={artifactQuery} onQueryChange={setArtifactQuery} onCreate={() => openNewArtifact()} onEdit={openArtifactEditor} onReview={reviewArtifact} exportMenu={<ExportMenu open={exportMenuOpen} setOpen={setExportMenuOpen} onExport={handleProjectExport} compact />} />
     if (activeView === 'documents') return <DocumentsView documents={documents} uploadState={uploadState} uploadMessage={uploadMessage} retryFile={retryFile} inputRef={uploadInputRef} isDragging={isDraggingFile} onInput={handleFileInput} onRetry={() => retryFile && void uploadFile(retryFile)} onDrop={handleDropFile} onDragEnter={() => setIsDraggingFile(true)} onDragLeave={() => setIsDraggingFile(false)} query={documentQuery} setQuery={setDocumentQuery} results={searchResults} searching={isSearching} searchMessage={searchMessage} onSearch={handleDocumentSearch} />
-    return <SettingsView apiStatus={apiConnection} apiError={apiConnectionError} status={ollamaStatus} error={ollamaError} checking={isCheckingConnections} onRefresh={() => void refreshConnections()} />
+    return <SettingsView apiStatus={apiConnection} apiError={apiConnectionError} status={providerStatus} error={providerError} checking={isCheckingConnections} onRefresh={() => void refreshConnections()} />
   }
 
   return <div className={`app-shell ${sidebarCollapsed ? 'app-shell-collapsed' : ''} ${activeView === 'assistant' && selectedProject ? 'app-shell-assistant' : ''}`}>
@@ -587,18 +587,21 @@ function DocumentsView({ documents, uploadState, uploadMessage, retryFile, input
   return <><PageHeading eyebrow="WORKSPACE / BIBLIOTECA" title="Documentos" description="Adicione materiais de referência e pesquise trechos indexados para este projeto." /><div className="documents-layout"><section className="content-section document-library-panel"><SectionHeading eyebrow="BIBLIOTECA DO PROJETO" title="Materiais" /><div className={`upload-zone ${isDragging ? 'upload-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); onDragEnter() }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onDragLeave() }} onDrop={onDrop}><div className="upload-icon"><Upload size={20} aria-hidden="true" /></div><div className="upload-copy"><strong>Adicione um documento</strong><p>Arraste um arquivo para esta área ou selecione no dispositivo.</p><small>Formatos aceitos: TXT, MD e PDF textual. O backend não define limite de tamanho.</small></div><input ref={inputRef} className="visually-hidden-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf" onChange={onInput} aria-label="Selecionar documento para upload" /><Button type="button" variant="secondary" icon={<Upload size={15} aria-hidden="true" />} onClick={() => inputRef.current?.click()}>Selecionar arquivo</Button></div>{uploadState !== 'idle' ? <div className={`upload-feedback upload-${uploadState}`} role={uploadState === 'error' ? 'alert' : 'status'}>{uploadState === 'sending' ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : uploadState === 'success' ? <Check size={16} aria-hidden="true" /> : <CircleHelp size={16} aria-hidden="true" />}<span>{uploadMessage}</span>{uploadState === 'error' && retryFile ? <Button type="button" variant="quiet" onClick={onRetry}>Tentar novamente</Button> : null}</div> : null}<div className="document-list-heading"><h2>Documentos deste projeto</h2><span>{documents.length}</span></div>{documents.length ? <ul className="document-list">{documents.map((document) => <li key={document.id}><div className="document-file-icon"><FileText size={17} aria-hidden="true" /></div><div className="document-file-details"><strong>{document.title}</strong><span>{document.doc_type} · {document.chunk_count ?? 0} trechos</span></div><time dateTime={document.created_at}>{formatDate(document.created_at)}</time><span className="document-indexed">Indexado</span></li>)}</ul> : <p className="document-empty-copy">Ainda não há documentos nesta biblioteca. Arquivos legíveis serão indexados para consulta.</p>}<p className="endpoint-limit-note">A API atual não oferece exclusão de documentos nem apresenta tamanho do arquivo salvo.</p></section><section className="content-section document-search-panel"><SectionHeading eyebrow="RECUPERAÇÃO LOCAL" title="Pesquisar na biblioteca" /><p>Busque palavras ou expressões nos trechos indexados deste projeto.</p><form className="document-search-form" onSubmit={onSearch}><label className="search-field"><Search size={16} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Termo de busca" placeholder="Ex.: zonas de intensidade" /></label><Button type="submit" variant="primary" disabled={searching || !query.trim()} icon={searching ? <LoaderCircle className="spin" size={15} aria-hidden="true" /> : <Search size={15} aria-hidden="true" />}>{searching ? 'Buscando…' : 'Buscar'}</Button></form>{searchMessage ? <p className="search-feedback" role="status">{searchMessage}</p> : null}{results.length ? <ol className="search-results">{results.map((result, index) => { const document = documents.find((item) => item.id === result.document_id); return <li key={`${result.document_id ?? 'chunk'}-${result.section ?? index}`}><div><strong>{document?.title ?? 'Trecho recuperado'}</strong><span>{result.section ?? 'Trecho do documento'}</span></div><p>{result.content}</p></li> })}</ol> : null}</section></div></>
 }
 
-function ConnectionPanel({ apiStatus, ollamaAvailable, checking, collapsed, onRefresh }: { apiStatus: ApiConnection; ollamaAvailable: boolean | null; checking: boolean; collapsed: boolean; onRefresh: () => void }) {
+function ConnectionPanel({ apiStatus, provider, checking, collapsed, onRefresh }: { apiStatus: ApiConnection; provider: ProviderStatus | null; checking: boolean; collapsed: boolean; onRefresh: () => void }) {
   const apiLabel = apiStatus === 'checking' ? 'Verificando' : apiStatus === 'connected' ? 'Conectada' : 'Indisponível'
-  const ollamaLabel = ollamaAvailable === null ? 'Verificando' : ollamaAvailable ? 'Conectado' : 'Indisponível'
-  return <div className={`connection-panel ${collapsed ? 'connection-panel-collapsed' : ''}`} role="status" aria-live="polite" aria-label={`API local: ${apiLabel}. Ollama: ${ollamaLabel}.`}>
+  const providerName = provider?.provider_label ?? 'Provedor de IA'
+  const providerLabel = !provider ? 'Verificando' : provider.available ? 'Disponível' : 'Indisponível'
+  return <div className={`connection-panel ${collapsed ? 'connection-panel-collapsed' : ''}`} role="status" aria-live="polite" aria-label={`API local: ${apiLabel}. ${providerName}: ${providerLabel}.`}>
     <div className="connection-line" title={`API local: ${apiLabel}`}><span className={`connection-dot is-${apiStatus}`} aria-hidden="true" /><span className="connection-label">API local</span><strong className="connection-value">{apiLabel}</strong></div>
-    <div className="connection-line" title={`Ollama: ${ollamaLabel}`}><span className={`connection-dot ${ollamaAvailable === null ? 'is-checking' : ollamaAvailable ? 'is-connected' : 'is-offline'}`} aria-hidden="true" /><span className="connection-label">Ollama</span><strong className="connection-value">{ollamaLabel}</strong></div>
+    <div className="connection-line" title={`${providerName}: ${providerLabel}`}><span className={`connection-dot ${!provider ? 'is-checking' : provider.available ? 'is-connected' : 'is-offline'}`} aria-hidden="true" /><span className="connection-label">{providerName}</span><strong className="connection-value">{providerLabel}</strong></div>
     <button type="button" className="connection-refresh" onClick={onRefresh} disabled={checking} aria-label="Atualizar status das conexões" title="Atualizar status das conexões"><RefreshCw size={14} className={checking ? 'spin' : ''} aria-hidden="true" />{collapsed ? null : <span>{checking ? 'Verificando…' : 'Verificar agora'}</span>}</button>
   </div>
 }
 
-function SettingsView({ apiStatus, apiError, status, error, checking, onRefresh }: { apiStatus: ApiConnection; apiError: string; status: OllamaStatus | null; error: string; checking: boolean; onRefresh: () => void }) {
-  return <><PageHeading eyebrow="WORKSPACE / PREFERÊNCIAS" title="Configurações" description="Diagnóstico das integrações locais usadas pelo assistente." /><section className="content-section settings-panel"><div className="settings-heading"><div className="settings-icon"><Activity size={20} aria-hidden="true" /></div><div><span className="eyebrow">INFERÊNCIA LOCAL</span><h2>Ollama</h2><p>Conexão consultada pela API local. A indisponibilidade pode resultar em resposta de fallback.</p></div><Button variant="secondary" disabled={checking} icon={checking ? <LoaderCircle className="spin" size={15} aria-hidden="true" /> : <RefreshCw size={15} aria-hidden="true" />} onClick={onRefresh}>{checking ? 'Verificando…' : 'Verificar conexões'}</Button></div><div className="settings-details"><div><span>API local</span><strong className={apiStatus === 'connected' ? 'text-success' : apiStatus === 'offline' ? 'text-error' : 'text-warning'}>{apiStatus === 'connected' ? 'Conectada' : apiStatus === 'offline' ? 'Indisponível' : 'Verificando'}</strong>{apiError ? <p>{apiError}</p> : null}</div><div><span>Ollama</span><strong className={status?.available ? 'text-success' : status ? 'text-warning' : 'text-error'}>{status ? status.available ? 'Conectado' : 'Indisponível' : 'Sem resposta'}</strong>{error ? <p>{error}</p> : null}</div>{status ? <><div><span>Modelo configurado</span><strong>{status.model || 'Não informado'}</strong></div><div><span>Endereço local</span><strong>{status.base_url}</strong></div></> : null}</div><p className="endpoint-limit-note">Credenciais e tokens do Polar não são gerenciados por esta aplicação atualmente.</p></section></>
+function SettingsView({ apiStatus, apiError, status, error, checking, onRefresh }: { apiStatus: ApiConnection; apiError: string; status: ProviderStatus | null; error: string; checking: boolean; onRefresh: () => void }) {
+  const providerName = status?.provider_label ?? 'Provedor de IA'
+  const providerReady = status?.available === true
+  return <><PageHeading eyebrow="WORKSPACE / PREFERÊNCIAS" title="Configurações" description="Diagnóstico das integrações locais usadas pelo assistente." /><section className="content-section settings-panel"><div className="settings-heading"><div className="settings-icon"><Activity size={20} aria-hidden="true" /></div><div><span className="eyebrow">INFERÊNCIA LOCAL</span><h2>{providerName}</h2><p>{status?.provider === 'mlx' ? 'O adaptador Lifecycle Mentor será carregado em memória quando a primeira pergunta for enviada.' : 'O provedor configurado é consultado pelo backend local.'}</p></div><Button variant="secondary" disabled={checking} icon={checking ? <LoaderCircle className="spin" size={15} aria-hidden="true" /> : <RefreshCw size={15} aria-hidden="true" />} onClick={onRefresh}>{checking ? 'Verificando…' : 'Verificar conexões'}</Button></div><div className="settings-details"><div><span>API local</span><strong className={apiStatus === 'connected' ? 'text-success' : apiStatus === 'offline' ? 'text-error' : 'text-warning'}>{apiStatus === 'connected' ? 'Conectada' : apiStatus === 'offline' ? 'Indisponível' : 'Verificando'}</strong>{apiError ? <p>{apiError}</p> : null}</div><div><span>{providerName}</span><strong className={providerReady ? 'text-success' : status ? 'text-warning' : 'text-error'}>{status ? providerReady ? 'Disponível' : 'Indisponível' : 'Sem resposta'}</strong>{error ? <p>{error}</p> : null}</div>{status ? <><div><span>Adaptador/modelo</span><strong>{status.model || 'Não informado'}</strong></div><div><span>Modelo-base/runtime</span><strong>{status.base_model || status.base_url}</strong></div></> : null}</div><p className="endpoint-limit-note">Credenciais e tokens do Polar não são gerenciados por esta aplicação atualmente.</p></section></>
 }
 
 export default App

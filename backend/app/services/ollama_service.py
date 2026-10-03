@@ -1,11 +1,24 @@
 import json
+from functools import lru_cache
 from pathlib import Path
+from threading import Lock
+from importlib.util import find_spec
 
 import httpx
 
-from backend.app.config import EMBEDDING_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL
+from backend.app.config import (
+    CHAT_PROVIDER,
+    EMBEDDING_MODEL,
+    MLX_ADAPTER_PATH,
+    MLX_ADAPTER_REPO,
+    MLX_MAX_TOKENS,
+    MLX_MODEL,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+)
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "system_prompt.md"
+_mlx_load_lock = Lock()
 
 
 def load_system_prompt() -> str:
@@ -29,9 +42,23 @@ def ollama_available() -> tuple[bool, str]:
 
 
 def model_status() -> dict:
+    if CHAT_PROVIDER == "mlx":
+        available = find_spec("mlx_lm") is not None
+        return {
+            "available": available,
+            "provider": "mlx",
+            "provider_label": "MLX · Lifecycle Mentor",
+            "model": MLX_ADAPTER_REPO,
+            "base_model": MLX_MODEL,
+            "base_url": "Apple Silicon local",
+            "reason": "O adaptador será carregado na primeira mensagem." if available else "mlx-lm não está instalado neste ambiente Apple Silicon.",
+        }
+
     ok, reason = ollama_available()
     return {
         "available": ok,
+        "provider": "ollama",
+        "provider_label": "Ollama",
         "base_url": OLLAMA_BASE_URL,
         "model": OLLAMA_MODEL,
         "version": "not-queried",
@@ -71,11 +98,62 @@ def chat_messages_for_prompt(project_context: str, question: str, mode: str, sou
     ]
 
 
+@lru_cache(maxsize=1)
+def _load_mlx_components(base_model: str, adapter_repo: str, local_adapter_path: str):
+    from huggingface_hub import snapshot_download
+    from mlx_lm import load
+
+    adapter_path = local_adapter_path
+    if not adapter_path:
+        adapter_path = snapshot_download(
+            repo_id=adapter_repo,
+            allow_patterns=["adapters.safetensors", "adapter_config.json"],
+        )
+    return load(base_model, adapter_path=adapter_path)
+
+
+def _generate_mlx_response(messages: list[dict]) -> str:
+    from mlx_lm import generate
+    from mlx_lm.sample_utils import make_sampler
+
+    with _mlx_load_lock:
+        model, tokenizer = _load_mlx_components(MLX_MODEL, MLX_ADAPTER_REPO, MLX_ADAPTER_PATH)
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=MLX_MAX_TOKENS,
+            sampler=make_sampler(temp=0.3, top_p=0.8),
+            verbose=False,
+        )
+
+
 def generate_chat_response(project_context: str, question: str, mode: str, sources: str = "") -> dict:
+    messages = chat_messages_for_prompt(project_context, question, mode, sources)
+    if CHAT_PROVIDER == "mlx":
+        try:
+            answer = _generate_mlx_response(messages)
+            if answer.strip():
+                return {"answer": answer, "sources": []}
+            raise RuntimeError("O adaptador MLX retornou uma resposta vazia.")
+        except Exception as exc:  # pragma: no cover - requires Apple Silicon and model files
+            return {
+                "answer": (
+                    "Não foi possível gerar uma resposta com o adaptador Lifecycle Mentor no MLX. "
+                    f"Verifique o modelo, o adaptador e a memória disponível ({type(exc).__name__})."
+                ),
+                "sources": [],
+            }
+
     payload = {
         "model": OLLAMA_MODEL,
         "stream": False,
-        "messages": chat_messages_for_prompt(project_context, question, mode, sources),
+        "messages": messages,
         "options": {"temperature": 0.3, "top_p": 0.8},
     }
     try:

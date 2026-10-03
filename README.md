@@ -1,6 +1,6 @@
 # Lifecycle Mentor
 
-Lifecycle Mentor é uma plataforma educacional local para aprender PDLC e SDLC em projetos reais, com suporte a RAG local, chat assistido por Ollama, gestão de projetos e preparação para treinamento de modelo ajustado.
+Lifecycle Mentor é uma plataforma educacional local para aprender PDLC e SDLC em projetos reais, com suporte a RAG local, chat com Ollama ou com o adaptador MLX publicado no Hugging Face, gestão de projetos e treinamento local.
 
 ## Visão geral
 
@@ -18,13 +18,14 @@ Este repositório organiza:
 ## Requisitos mínimos
 
 - macOS com Python 3.11 (recomendado) e Node 20+
-- Ollama instalado localmente para inferência
+- macOS Apple Silicon para usar o adaptador MLX publicado (ou Ollama como alternativa)
+- Ollama opcional para embeddings e inferência alternativa
 - uma pasta de trabalho para armazenar dados e documentos
-- opcional: MLX-LM e Hugging Face Hub para pipeline de treinamento/exportação
+- MLX-LM instalado no ambiente do projeto para inferência do adaptador treinado
 
 > Importante: o projeto não foi validado com Python 3.14 em conjunto com as dependências atuais do backend. Use Python 3.11 ou 3.12 para evitar falhas de instalação.
 
-Para um MVP, a aplicação pode rodar sem treinar um modelo. O fluxo mínimo exige um modelo no Ollama configurado.
+O repositório público já contém o adaptador LoRA experimental do Lifecycle Mentor. Não é necessário treinar outro modelo para conversar com ele. Em Apple Silicon, `CHAT_PROVIDER=auto` seleciona MLX se `mlx-lm` estiver instalado; nos demais ambientes, seleciona Ollama.
 
 ## Inicialização rápida
 
@@ -35,6 +36,12 @@ Para um MVP, a aplicação pode rodar sem treinar um modelo. O fluxo mínimo exi
    source .venv/bin/activate
    python -m pip install --upgrade pip
    python -m pip install -r backend/requirements.txt
+   ```
+
+   Para usar o adaptador MLX em Apple Silicon, instale também o runtime opcional:
+
+   ```bash
+   python -m pip install mlx-lm
    ```
 
 2. Configure as variáveis de ambiente:
@@ -61,13 +68,33 @@ Para um MVP, a aplicação pode rodar sem treinar um modelo. O fluxo mínimo exi
 
 ## Modelo no Ollama
 
-Antes de usar o chat, instale um modelo em Ollama, por exemplo:
+Ollama permanece disponível como provedor alternativo e é usado para embeddings quando disponível. Para selecionar explicitamente esse provedor, configure `CHAT_PROVIDER=ollama` no `.env`. Instale um modelo, por exemplo:
 
 ```bash
 ollama pull llama3.2:3b-instruct-q8_0
 ```
 
-O arquivo .env.example já representa um modelo de referência, mas os nomes de modelos podem variar.
+O valor de `OLLAMA_MODEL` no `.env.example` é apenas uma referência; nomes de modelos podem variar.
+
+## Adaptador MLX publicado
+
+O chat pode usar o adaptador LoRA público [tadrianonet/lifecycle-mentor](https://huggingface.co/tadrianonet/lifecycle-mentor), treinado sobre [Qwen2.5-7B-Instruct-4bit da MLX Community](https://huggingface.co/mlx-community/Qwen2.5-7B-Instruct-4bit). Em Apple Silicon com `mlx-lm` instalado, a configuração padrão `CHAT_PROVIDER=auto` seleciona esse caminho. Também é possível escolher explicitamente com `CHAT_PROVIDER=mlx`.
+
+Na primeira pergunta, o backend baixa o checkpoint MLX (aproximadamente 4,3 GB) e o pequeno adaptador para o cache do Hugging Face; execuções posteriores reutilizam os arquivos em cache. O repositório de pesos é público, portanto não é necessário criar nem configurar `HF_TOKEN` para inferência. Opcionalmente, `MLX_ADAPTER_PATH` aponta para uma cópia local do diretório do adaptador.
+
+O repositório publicado contém somente o adaptador MLX, não o modelo-base completo. Esse formato não pode ser carregado diretamente pelo Ollama: o Ollama requer um artefato compatível, normalmente GGUF, após fusão/conversão. A configuração do projeto mantém Ollama como alternativa, sem afirmar compatibilidade entre os formatos.
+
+O MLX atende ao chat; RAG/embeddings continua consultando Ollama quando disponível e usa o fallback local existente se Ollama não estiver rodando.
+
+### Trocar o provedor
+
+Edite `.env` e escolha uma destas opções:
+
+```dotenv
+CHAT_PROVIDER=auto
+```
+
+`auto` seleciona MLX em Apple Silicon quando o runtime está instalado e Ollama nos demais casos. Para fixar um provedor, use `CHAT_PROVIDER=mlx` ou `CHAT_PROVIDER=ollama`. Reinicie o backend após alterar essa configuração. A tela Configurações mostra o provedor selecionado e o estado reportado pelo backend.
 
 ## Rotina de teste funcional do PulsoNexo
 
@@ -133,6 +160,7 @@ O fluxo principal está correto quando:
 - Banco SQLite local
 - Fluxo demonstrativo de jiu-jítsu
 - Pipeline de dataset, avaliação e treinamento com documentação e limites explícitos
+- Adaptador LoRA experimental no Hugging Face, utilizável localmente com MLX-LM
 
 ## Documentação adicional
 
@@ -150,6 +178,7 @@ O fluxo principal está correto quando:
 ## Observações importantes
 
 - A aplicação funciona localmente e não depende de serviços externos para o MVP.
-- O projeto usa Ollama como inferência e embeddings locais, quando disponíveis.
-- Treinamento em Apple Silicon com MLX-LM é documentado, mas não é disparado automaticamente por este repositório.
+- O provedor de chat pode ser MLX (adaptador Lifecycle Mentor) ou Ollama; embeddings usam Ollama quando disponível.
+- O adaptador publicado é um piloto treinado com seis exemplos fictícios e não deve ser tratado como modelo validado para produção.
+- Treinamento local com MLX-LM está disponível em `training/`; a execução do chat usa o adaptador já publicado e não dispara novo treinamento.
 - O pipeline do dataset, treino e exportação é separado da aplicação principal para evitar poluir o fluxo de produção.
